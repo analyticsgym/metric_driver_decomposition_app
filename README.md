@@ -1,6 +1,5 @@
 # Sub-Metrics Driver Decomposition App
-
-A Streamlit application that uses log decomposition to analyze time-window vs. time-window changes in business outcome metrics, based on driver sub-metric contributions.
+[Streamlit app](https://metric-decomposition-app.streamlit.app/) that uses log decomposition to analyze time-window vs. time-window changes in business outcome metrics, based on driver sub-metric contributions.
 
 ## Features
 
