@@ -105,6 +105,15 @@ with cols[1]:
 
 
 # -----------------------------
+# Initialize session state
+# -----------------------------
+if "decomposition_results" not in st.session_state:
+    st.session_state.decomposition_results = None
+if "llm_summary" not in st.session_state:
+    st.session_state.llm_summary = None
+    st.session_state.llm_summary_error = None
+
+# -----------------------------
 # Run decomposition
 # -----------------------------
 if st.button("Run Decomposition"):
@@ -115,11 +124,6 @@ if st.button("Run Decomposition"):
 
     # Create clean metric name (remove suffix like _1, _2, etc.)
     metric_name_clean = outcome_info["metric_name"].split("_")[0]
-
-    # -----------------------------
-    # Output Metric Summary
-    # -----------------------------
-    st.subheader("Outcome Metric Summary")
 
     # Calculate percentage change
     pct_change = (
@@ -143,19 +147,7 @@ if st.button("Run Decomposition"):
         format_value(outcome_info["absolute_change"], is_sales)
     ]
 
-    st.dataframe(
-        output_df,
-        use_container_width=True,
-        hide_index=True,
-    )
-
-    # -----------------------------
-    # Driver Contributions
-    # -----------------------------
-    st.subheader("Driver Contributions")
-
-    # Format display columns - check if metric name starts with "Sales" for currency formatting
-    is_sales = outcome_info["metric_name"].startswith("Sales")
+    # Format display columns for driver contributions
     display_df = pd.DataFrame()
     display_df["Driver"] = drivers_df["metric"]
     display_df["t0 Value"] = drivers_df["time0_value"].apply(
@@ -193,8 +185,56 @@ if st.button("Run Decomposition"):
     # Concatenate display_df with total row
     display_df_with_total = pd.concat([display_df, total_row], ignore_index=True)
 
+    # Store all results in session state
+    # Note: matplotlib figures can't be pickled, so we recreate them when needed
+    st.session_state.decomposition_results = {
+        "drivers_df": drivers_df,
+        "outcome_info": outcome_info,
+        "output_df": output_df,
+        "display_df_with_total": display_df_with_total,
+        "formula_order": formula_order,
+        "metric_name_clean": metric_name_clean,
+        "metric_name": metric_name,
+        "formula": formula,
+        "numerators": numerators,
+        "denominators": denominators,
+    }
+
+    # Clear LLM summary when new decomposition is run
+    st.session_state.llm_summary = None
+    st.session_state.llm_summary_error = None
+
+    # -----------------------------
+    # Validation Check
+    # -----------------------------
+    is_valid, error_msg = validate_decomposition(drivers_df, outcome_info)
+
+    if not is_valid:
+        st.error(f"❌ **Validation Failed:** {error_msg} Please check your inputs.")
+        st.session_state.decomposition_results = None
+        st.stop()  # Stop execution if validation fails
+
+# -----------------------------
+# Display decomposition results (persisted)
+# -----------------------------
+if st.session_state.decomposition_results is not None:
+    results = st.session_state.decomposition_results
+    # -----------------------------
+    # Output Metric Summary
+    # -----------------------------
+    st.subheader("Outcome Metric Summary")
     st.dataframe(
-        display_df_with_total,
+        results["output_df"],
+        use_container_width=True,
+        hide_index=True,
+    )
+
+    # -----------------------------
+    # Driver Contributions
+    # -----------------------------
+    st.subheader("Driver Contributions")
+    st.dataframe(
+        results["display_df_with_total"],
         use_container_width=True,
         hide_index=True,
     )
@@ -203,8 +243,12 @@ if st.button("Run Decomposition"):
     # True Waterfall Chart
     # -----------------------------
     st.subheader("Waterfall Chart: Contribution Share by Sub-Metric")
+    # Recreate the waterfall chart (matplotlib figures can't be pickled in session_state)
     waterfall_fig = create_waterfall_chart(
-        drivers_df, outcome_info, formula_order, metric_name_clean
+        results["drivers_df"],
+        results["outcome_info"],
+        results["formula_order"],
+        results["metric_name_clean"],
     )
     st.pyplot(waterfall_fig)
     plt.close(waterfall_fig)
@@ -224,31 +268,42 @@ if st.button("Run Decomposition"):
         unsafe_allow_html=True,
     )
 
-    with st.spinner("Generating executive summary..."):
-        try:
-            summary = generate_executive_summary(
-                metric_name=metric_name,
-                formula=formula,
-                outcome_df=output_df,
-                drivers_df=drivers_df,
-                numerators=numerators,
-                denominators=denominators,
-            )
-            st.markdown(summary)
-        except ValueError as e:
-            st.warning(f"⚠️ Could not generate executive summary: {str(e)}")
-        except Exception as e:
-            st.error(f"❌ Error generating executive summary: {str(e)}")
+    generate_button = st.button("Generate Executive Summary")
+    if generate_button:
+        with st.spinner("Generating executive summary..."):
+            try:
+                summary = generate_executive_summary(
+                    metric_name=results["metric_name"],
+                    formula=results["formula"],
+                    outcome_df=results["output_df"],
+                    drivers_df=results["drivers_df"],
+                    numerators=results["numerators"],
+                    denominators=results["denominators"],
+                )
+                st.session_state.llm_summary = summary
+                st.session_state.llm_summary_error = None
+            except ValueError as e:
+                st.session_state.llm_summary = None
+                st.session_state.llm_summary_error = (
+                    f"⚠️ Could not generate executive summary: {str(e)}"
+                )
+            except Exception as e:
+                st.session_state.llm_summary = None
+                st.session_state.llm_summary_error = (
+                    f"❌ Error generating executive summary: {str(e)}"
+                )
 
-    # -----------------------------
-    # Validation Check
-    # -----------------------------
-    is_valid, error_msg = validate_decomposition(drivers_df, outcome_info)
-
-    if not is_valid:
-        st.error(f"❌ **Validation Failed:** {error_msg} Please check your inputs.")
-        st.stop()  # Stop execution if validation fails
+    # Display the summary or error from the session state if present
+    if st.session_state.llm_summary is not None:
+        st.code(st.session_state.llm_summary, language="markdown")
+    elif st.session_state.llm_summary_error is not None:
+        if st.session_state.llm_summary_error.startswith("⚠️"):
+            st.warning(st.session_state.llm_summary_error)
+        else:
+            st.error(st.session_state.llm_summary_error)
 
 # Footer
 st.markdown("---")
-st.caption("Built with Streamlit · Multiplicative log-share decomposition")
+st.caption(
+    "Built with Streamlit · Log Decomposition for Sub-Metric Contribution Analysis"
+)
