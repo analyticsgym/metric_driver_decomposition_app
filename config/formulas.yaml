@@ -1,0 +1,9 @@
+Sales_1: "Spend / CPA * AOV"
+Sales_2: "Spend * ROAS"
+# Sales_3: "Impressions * CTR * CVR * AOV"
+# Sales_4: "Traffic * CVR * AOV"
+ROAS_1: "AOV / CPA"
+# ROAS_2: "1000 * CTR * CVR * AOV / CPM"
+ROAS_3: "Sales / Spend"
+# CPA: "CPM / (CTR * CVR * 1000)"
+
