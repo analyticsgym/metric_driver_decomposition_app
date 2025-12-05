@@ -9,6 +9,7 @@ def create_waterfall_chart(
     outcome_info: Dict,
     formula_order: List[str],
     metric_name_clean: str,
+    higher_is_better: bool = True,
 ):
     """Create a true waterfall chart showing cumulative path from t0 to t1.
 
@@ -16,7 +17,9 @@ def create_waterfall_chart(
         drivers_df: DataFrame with driver contributions
         outcome_info: Dict with metric information
         formula_order: List of driver names in the order they appear in the formula
-        metric_name_clean: Clean metric name without suffix (e.g., "Sales" instead of "Sales_1")
+        metric_name_clean: Clean metric name without suffix
+        higher_is_better: True if metric increase is good (Sales), False if bad (CPA)
+
 
     Returns:
         matplotlib Figure object
@@ -43,11 +46,20 @@ def create_waterfall_chart(
         labels.append(row["metric"])
         contribution = row["absolute_contribution"]
         ppt_contributions.append(row["percentage_points_contribution"])
-        # Color based on direction
-        if contribution >= 0:
-            colors.append("#2ca02c")  # Green for positive
+        # Color based on direction and higher_is_better
+        if higher_is_better:
+            # Good metric (Sales): Positive is green, Negative is red
+            if contribution >= 0:
+                colors.append("#2ca02c")  # Green for positive
+            else:
+                colors.append("#d62728")  # Red for negative
         else:
-            colors.append("#d62728")  # Red for negative
+             # Bad metric (CPA): Positive is driver for INCREASE (Bad) -> Red
+             # Negative is driver for DECREASE (Good) -> Green
+            if contribution >= 0:
+                colors.append("#d62728")  # Red for negative impact (increasing cost)
+            else:
+                colors.append("#2ca02c")  # Green for positive impact (decreasing cost)
 
     # Add final value
     labels.append(f"{metric_name_clean}\n(t1)")
@@ -117,8 +129,8 @@ def create_waterfall_chart(
         zorder=2,
     )
 
-    # Add value labels on bars - check if metric name starts with "Sales" for currency formatting
-    is_sales = outcome_info["metric_name"].startswith("Sales")
+    # Add value labels on bars - check if metric name requires currency formatting
+    is_currency_metric = outcome_info["metric_name"].startswith("Sales") or outcome_info["metric_name"].startswith("CPA")
     for i, (bar, label) in enumerate(zip(bars, labels)):
         bar_height = heights[i]
         bar_bottom = bottoms[i]
@@ -127,7 +139,7 @@ def create_waterfall_chart(
         if i == 0:
             # Starting value
             label_text = (
-                f"${bar_height:,.0f}" if is_sales else f"{bar_height:.2f}"
+                f"${bar_height:,.0f}" if is_currency_metric else f"{bar_height:.2f}"
             )
             label_color = "white"
         elif i == len(labels) - 1:
@@ -136,7 +148,7 @@ def create_waterfall_chart(
             pct_change_vs_t0 = (
                 ((t1_value - t0_value) / t0_value * 100) if t0_value != 0 else 0
             )
-            val_str = f"${bar_height:,.0f}" if is_sales else f"{bar_height:.2f}"
+            val_str = f"${bar_height:,.0f}" if is_currency_metric else f"{bar_height:.2f}"
             label_text = f"{val_str}\n{pct_change_vs_t0:+.1f}%"
             label_color = "white"
         else:
@@ -145,7 +157,7 @@ def create_waterfall_chart(
             driver_idx = i - 1  # Index into drivers (0-based, i=1 is first driver)
             ppt_contribution = ppt_contributions[driver_idx]
             val_str = (
-                f"${contribution:,.0f}" if is_sales else f"{contribution:.2f}"
+                f"${contribution:,.0f}" if is_currency_metric else f"{contribution:.2f}"
             )
             label_text = f"{val_str}\n{ppt_contribution:.1f} ppts"
             label_color = "black"
@@ -159,7 +171,25 @@ def create_waterfall_chart(
             fontsize=14,
             fontweight="bold",
             color=label_color,
+            clip_on=False
         )
+
+    # Robustly set Y-axis limits to prevent label clipping
+    # Calculate min and max y-values from bars
+    all_bottoms = bottoms
+    all_tops = [b + h for b, h in zip(bottoms, heights)]
+    
+    # Pad limits by height of text buffer (e.g., 20% of range)
+    y_min = min(min(all_bottoms), min(all_tops))
+    y_max = max(max(all_bottoms), max(all_tops))
+    
+    # If flat (no change), allow some space
+    if y_max == y_min:
+        y_max += abs(y_max) * 0.1 if y_max != 0 else 1.0
+        y_min -= abs(y_min) * 0.1 if y_min != 0 else 1.0
+        
+    y_range = y_max - y_min
+    ax.set_ylim(y_min - 0.1 * y_range, y_max + 0.1 * y_range)
 
     # Customize chart
     ax.set_xticks(x_positions)
@@ -176,6 +206,7 @@ def create_waterfall_chart(
         pad=20,
     )
     ax.grid(axis="y", alpha=0.3, linestyle="--")
+    ax.margins(y=0.2)  # Add padding to prevent labels from being cut off
 
     # Add zero line if needed
     min_y = min(min(bottoms), min([b + h for b, h in zip(bottoms, heights)]))

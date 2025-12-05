@@ -1,9 +1,97 @@
-Sales_1: "Spend / CPA * AOV"
-Sales_2: "Spend * ROAS"
-# Sales_3: "Impressions * CTR * CVR * AOV"
-# Sales_4: "Traffic * CVR * AOV"
-ROAS_1: "AOV / CPA"
-# ROAS_2: "1000 * CTR * CVR * AOV / CPM"
-ROAS_3: "Sales / Spend"
-# CPA: "CPM / (CTR * CVR * 1000)"
+- id: 1
+  output_metric: "Sales"
+  formula_drop_down: "Sales = Spend / CPA * AOV"
+  numerators: 
+    - "Spend"
+    - "AOV"
+  denominators: 
+    - "CPA"
+  driver_order:
+    - "Spend"
+    - "CPA"
+    - "AOV"
+  higher_is_better: true
 
+- id: 2
+  output_metric: "Sales"
+  formula_drop_down: "Sales = ((1000 * CTR * CVR * AOV) / CPM) * Spend"
+  numerators:
+    - "CTR"
+    - "CVR"
+    - "AOV"
+    - "Spend"
+  denominators:
+    - "CPM"
+  driver_order:
+    - "CTR"
+    - "CVR"
+    - "AOV"
+    - "CPM"
+    - "Spend"
+  higher_is_better: true
+  multiplier: 1000.0
+  driver_labels:
+    CTR: "CTR (decimal, e.g. 0.01 = 1%)"
+    CVR: "CVR (decimal, e.g. 0.05 = 5%)"
+
+- id: 3
+  output_metric: "Sales"
+  formula_drop_down: "Sales = Spend * ROAS"
+  numerators:
+    - "Spend"
+    - "ROAS"
+  denominators: []
+  driver_order:
+    - "Spend"
+    - "ROAS"
+  higher_is_better: true
+
+- id: 4
+  output_metric: "ROAS"
+  formula_drop_down: "ROAS = AOV / CPA"
+  numerators:
+    - "AOV"
+  denominators:
+    - "CPA"
+  driver_order:
+    - "AOV"
+    - "CPA"
+  higher_is_better: true
+
+- id: 5
+  output_metric: "ROAS"
+  formula_drop_down: "ROAS = (1000 * CTR * CVR * AOV) / CPM"
+  numerators:
+    - "CTR"
+    - "CVR"
+    - "AOV"
+  denominators:
+    - "CPM"
+  driver_order:
+    - "CTR"
+    - "CVR"
+    - "AOV"
+    - "CPM"
+  higher_is_better: true
+  multiplier: 1000.0
+  driver_labels:
+    CTR: "CTR (decimal, e.g. 0.01 = 1%)"
+    CVR: "CVR (decimal, e.g. 0.05 = 5%)"
+
+- id: 6
+  output_metric: "CPA"
+  formula_drop_down: "CPA = CPM / (CTR * CVR * 1000)"
+  numerators:
+    - "CPM"
+  denominators:
+    - "CTR"
+    - "CVR"
+  driver_order:
+    - "CPM"
+    - "CTR"
+    - "CVR"
+  higher_is_better: false
+  multiplier: 0.001
+  driver_labels:
+    CTR: "CTR (decimal, e.g. 0.01 = 1%)"
+    CVR: "CVR (decimal, e.g. 0.05 = 5%)"

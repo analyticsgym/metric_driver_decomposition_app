@@ -2,7 +2,7 @@
 import pandas as pd
 import numpy as np
 from typing import Tuple, Dict
-from src.formulas import parse_formula
+
 
 
 def multiplicative_contribution(
@@ -87,55 +87,26 @@ def multiplicative_contribution(
     return df, outcome_info
 
 
-def log_decompose(
-    formula_str: str, t0: Dict[str, float], t1: Dict[str, float]
-) -> Tuple[pd.DataFrame, Dict]:
-    """Decompose a metric using log decomposition.
-    
-    Args:
-        formula_str: Formula expression as string (e.g., "Spend / CPA * AOV")
-        t0: Dictionary of values at time 0
-        t1: Dictionary of values at time 1
-    
-    Returns:
-        Tuple of (drivers_df, outcome_info)
-    """
-    numerators, denominators = parse_formula(formula_str)
-    
-    # Extract metric name from t0/t1 (it should be a key that's not a driver)
-    drivers = numerators + denominators
-    metric_candidates = set(t0.keys()) - set(drivers)
-    if len(metric_candidates) != 1:
-        raise ValueError(
-            f"Could not uniquely identify metric. "
-            f"Found {metric_candidates} in t0/t1 that are not drivers."
-        )
-    metric_name = metric_candidates.pop()
-    
-    return multiplicative_contribution(metric_name, t0, t1, numerators, denominators)
 
 
 def decompose(
     metric_name: str,
     t0: Dict[str, float],
     t1: Dict[str, float],
-    formulas_dict: Dict[str, str],
+    numerators: list,
+    denominators: list,
 ) -> Tuple[pd.DataFrame, Dict]:
-    """Decompose a metric by name using formulas dictionary.
-    
+    """Decompose a metric by name using explicit numerators and denominators.
+
     Args:
         metric_name: Name of the metric to decompose
         t0: Dictionary of values at time 0
         t1: Dictionary of values at time 1
-        formulas_dict: Dictionary mapping metric names to formulas
-    
+        numerators: List of numerator driver names
+        denominators: List of denominator driver names
+
     Returns:
         Tuple of (drivers_df, outcome_info)
     """
-    if metric_name not in formulas_dict:
-        raise ValueError(f"Metric '{metric_name}' not found in formulas dictionary")
-    
-    formula = formulas_dict[metric_name]
-    numerators, denominators = parse_formula(formula)
     return multiplicative_contribution(metric_name, t0, t1, numerators, denominators)
 

@@ -4,7 +4,7 @@ import yaml
 import matplotlib.pyplot as plt
 from pathlib import Path
 
-from src.formulas import parse_formula, get_drivers_in_formula_order, evaluate_formula
+from src.formulas import evaluate_formula
 from src.decomposition import decompose
 from src.plotting import create_waterfall_chart
 from src.utils import validate_decomposition, format_value
@@ -29,26 +29,43 @@ st.write(
 # Metric selection
 # -----------------------------
 # Build pretty formula labels: "Sales = Spend / CPA * AOV" etc.
-formula_labels = {}
-reverse_formula_labels = {}
-for metric_key, formula_str in FORMULAS.items():
-    metric_name_clean = metric_key.split("_")[0]
-    label = f"{metric_name_clean} = {formula_str}"
-    formula_labels[label] = formula_str
-    reverse_formula_labels[formula_str] = metric_key
+# Build pretty formula labels from the list of objects
+formula_map = {}
+for f_obj in FORMULAS:
+    label = f_obj["formula_drop_down"]
+    formula_map[label] = f_obj
+
+# Callback to clear results when formula changes
+def reset_results():
+    st.session_state.decomposition_results = None
+    st.session_state.llm_summary = None
+    st.session_state.llm_summary_error = None
 
 # Show selectbox with cleaned-up formula labels
 selected_label = st.selectbox(
-    "Select an outcome metric to decompose", list(formula_labels.keys())
+    "Select an outcome metric to decompose",
+    list(formula_map.keys()),
+    on_change=reset_results,
 )
-formula = formula_labels[selected_label]
+selected_obj = formula_map[selected_label]
 
-# Get original metric_name and metric_name_clean from formula string
-metric_name = reverse_formula_labels[formula]
-metric_name_clean = metric_name.split("_")[0]
+metric_name = selected_obj["output_metric"]
+metric_name_clean = metric_name  # In new config this is already clean e.g. "Sales"
 
-numerators, denominators = parse_formula(formula)
+
+numerators = selected_obj.get("numerators", [])
+denominators = selected_obj.get("denominators", [])
+multiplier = selected_obj.get("multiplier", 1.0)
 drivers = numerators + denominators
+
+# We keep a string representation for display/logic that might need it
+# formatting like "Sales = ..." -> strip "Sales = " if needed or just use label
+# But evaluate_formula now accepts explicit lists, so the string is less critical for calculation
+# define a formula string for display or legacy usage (RHS of equation)
+if " = " in selected_obj["formula_drop_down"]:
+    formula_str = selected_obj["formula_drop_down"].split(" = ", 1)[1]
+else:
+    formula_str = selected_obj["formula_drop_down"] # fallback
 
 st.subheader("Input Values")
 
@@ -68,13 +85,23 @@ with cols[0]:
     # Input only drivers (not the metric itself)
     for d in drivers:
         init_val = default_t0.get(d, 1)
+        # Use custom label if available
+        label = selected_obj.get("driver_labels", {}).get(d, f"{d} (t0)")
+        if not label.endswith("(t0)"):
+            label = f"{label} (t0)"
+            
+        # Set format based on driver name
+        fmt = "%.4f" if d in ["CTR", "CVR"] else "%.2f"
+            
         t0[d] = st.number_input(
-            f"{d} (t0)", min_value=0.0, value=float(init_val), key=f"t0_{d}"
+            label, min_value=0.0, value=float(init_val), key=f"t0_{d}", format=fmt
         )
 
     # Compute and display metric as read-only
     try:
-        computed_t0_metric = evaluate_formula(formula, t0)
+        computed_t0_metric = evaluate_formula(
+            metric_name, t0, numerators=numerators, denominators=denominators, multiplier=multiplier
+        )
         t0[metric_name] = computed_t0_metric
         st.markdown(
             f"**{metric_name_clean} (t0) (computed):** {computed_t0_metric:,.2f}"
@@ -88,13 +115,23 @@ with cols[1]:
     # Input only drivers (not the metric itself)
     for d in drivers:
         init_val = default_t1.get(d, 1)
+        # Use custom label if available
+        label = selected_obj.get("driver_labels", {}).get(d, f"{d} (t1)")
+        if not label.endswith("(t1)"):
+            label = f"{label} (t1)"
+
+        # Set format based on driver name
+        fmt = "%.4f" if d in ["CTR", "CVR"] else "%.2f"
+
         t1[d] = st.number_input(
-            f"{d} (t1)", min_value=0.0, value=float(init_val), key=f"t1_{d}"
+            label, min_value=0.0, value=float(init_val), key=f"t1_{d}", format=fmt
         )
 
     # Compute and display metric as read-only
     try:
-        computed_t1_metric = evaluate_formula(formula, t1)
+        computed_t1_metric = evaluate_formula(
+            metric_name, t1, numerators=numerators, denominators=denominators, multiplier=multiplier
+        )
         t1[metric_name] = computed_t1_metric
         st.markdown(
             f"**{metric_name_clean} (t1) (computed):** {computed_t1_metric:,.2f}"
@@ -117,10 +154,13 @@ if "llm_summary" not in st.session_state:
 # Run decomposition
 # -----------------------------
 if st.button("Run Decomposition"):
-    drivers_df, outcome_info = decompose(metric_name, t0, t1, FORMULAS)
+    drivers_df, outcome_info = decompose(
+        metric_name, t0, t1, numerators=numerators, denominators=denominators
+    )
 
     # Get drivers in formula order
-    formula_order = get_drivers_in_formula_order(formula)
+    # Use the explicit order from config
+    formula_order = selected_obj.get("driver_order", drivers)
 
     # Create clean metric name (remove suffix like _1, _2, etc.)
     metric_name_clean = outcome_info["metric_name"].split("_")[0]
@@ -134,33 +174,33 @@ if st.button("Run Decomposition"):
         else 0
     )
 
-    # Determine if metric is sales for formatting
-    is_sales = outcome_info["metric_name"].startswith("Sales")
+    # Determine if metric is sales or CPA for formatting
+    is_currency_metric = outcome_info["metric_name"].startswith("Sales") or outcome_info["metric_name"].startswith("CPA")
 
     # Format output metric table
     output_df = pd.DataFrame()
     output_df["Metric"] = [metric_name_clean]
-    output_df["t0 Value"] = [format_value(outcome_info["time0_value"], is_sales)]
-    output_df["t1 Value"] = [format_value(outcome_info["time1_value"], is_sales)]
+    output_df["t0 Value"] = [format_value(outcome_info["time0_value"], is_currency_metric)]
+    output_df["t1 Value"] = [format_value(outcome_info["time1_value"], is_currency_metric)]
     output_df["Percent Change"] = [f"{pct_change:.2f}%"]
     output_df["Absolute Change"] = [
-        format_value(outcome_info["absolute_change"], is_sales)
+        format_value(outcome_info["absolute_change"], is_currency_metric)
     ]
 
     # Format display columns for driver contributions
     display_df = pd.DataFrame()
     display_df["Driver"] = drivers_df["metric"]
     display_df["t0 Value"] = drivers_df["time0_value"].apply(
-        lambda x: format_value(x, is_sales)
+        lambda x: format_value(x, is_currency_metric)
     )
     display_df["t1 Value"] = drivers_df["time1_value"].apply(
-        lambda x: format_value(x, is_sales)
+        lambda x: format_value(x, is_currency_metric)
     )
     display_df["Percent Change"] = drivers_df["pct_change"].apply(
         lambda x: f"{x*100:.2f}%"
     )
     display_df["Abs Contribution"] = drivers_df["absolute_contribution"].apply(
-        lambda x: format_value(x, is_sales)
+        lambda x: format_value(x, is_currency_metric)
     )
     display_df["Percentage Points Contribution"] = drivers_df[
         "percentage_points_contribution"
@@ -177,7 +217,7 @@ if st.button("Run Decomposition"):
             "t0 Value": [""],
             "t1 Value": [""],
             "Percent Change": [""],
-            "Abs Contribution": [format_value(total_abs_contribution, is_sales)],
+            "Abs Contribution": [format_value(total_abs_contribution, is_currency_metric)],
             "Percentage Points Contribution": [f"{total_ppt_contribution:.2f} ppts"],
         }
     )
@@ -195,7 +235,7 @@ if st.button("Run Decomposition"):
         "formula_order": formula_order,
         "metric_name_clean": metric_name_clean,
         "metric_name": metric_name,
-        "formula": formula,
+        "formula": formula_str,
         "numerators": numerators,
         "denominators": denominators,
     }
@@ -249,6 +289,7 @@ if st.session_state.decomposition_results is not None:
         results["outcome_info"],
         results["formula_order"],
         results["metric_name_clean"],
+        selected_obj.get("higher_is_better", True),
     )
     st.pyplot(waterfall_fig)
     plt.close(waterfall_fig)
