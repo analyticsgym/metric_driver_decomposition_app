@@ -15,6 +15,14 @@ config_path = Path(__file__).parent / "config" / "formulas.yaml"
 with open(config_path) as f:
     FORMULAS = yaml.safe_load(f)
 
+if not isinstance(FORMULAS, list):
+    st.error(
+        f"Configuration error: expected list of formulas in {config_path}, "
+        f"but got {type(FORMULAS)}. Please check the yaml file."
+    )
+    st.stop()
+
+
 # ==========================================================
 # STREAMLIT UI
 # ==========================================================
