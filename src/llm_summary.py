@@ -50,12 +50,11 @@ Executive summary draft:
 {summary}
 """
 
-    response = client.responses.create(
+    response = client.chat.completions.create(
         model="gpt-5-mini",
-        input=[{"role": "user", "content": prompt}],
-        reasoning={"effort": "low"},
+        messages=[{"role": "user", "content": prompt}],
     )
-    return response.output_text
+    return response.choices[0].message.content
 
 
 def generate_executive_summary(
@@ -166,13 +165,10 @@ D. Next Step Ideas
 
 """
 
-    response = client.responses.create(
+    response = client.chat.completions.create(
         model="gpt-5",
-        input=[{"role": "user", "content": prompt}],
-        # tools=[{"type": "web_search"}],
-        # tool_choice="auto",
-        reasoning={"effort": "medium"},
+        messages=[{"role": "user", "content": prompt}],
     )
-    summary = response.output_text
+    summary = response.choices[0].message.content
     improved_summary = evaluate_executive_summary(summary)
     return improved_summary
