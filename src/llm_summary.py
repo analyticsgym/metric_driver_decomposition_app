@@ -4,7 +4,7 @@ import os
 import re
 from pathlib import Path
 import pandas as pd
-import anthropic
+from openai import OpenAI, APIError
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
@@ -13,14 +13,14 @@ load_dotenv()
 
 def evaluate_executive_summary(summary: str) -> str:
     """Evaluate the executive summary and make improvements."""
-    api_key = os.getenv("ANTHROPIC_API_KEY")
+    api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
         raise ValueError(
-            "ANTHROPIC_API_KEY not found in environment variables. "
+            "OPENAI_API_KEY not found in environment variables. "
             "Please set it in your .env file."
         )
 
-    client = anthropic.Anthropic()
+    client = OpenAI()
 
     prompt = f"""
 You are an expert data analyst and executive communication coach.
@@ -50,12 +50,12 @@ Executive summary draft:
 {summary}
 """
 
-    response = client.messages.create(
-        model="claude-haiku-4-5",
-        max_tokens=2048,
-        messages=[{"role": "user", "content": prompt}],
+    response = client.responses.create(
+        model="gpt-5-mini",
+        input=[{"role": "user", "content": prompt}],
+        reasoning={"effort": "low"},
     )
-    return response.content[0].text
+    return response.output_text
 
 
 def generate_executive_summary(
@@ -66,7 +66,7 @@ def generate_executive_summary(
     numerators: list,
     denominators: list,
 ) -> str:
-    """Generate an executive summary using the Anthropic API.
+    """Generate an executive summary using the OpenAI API.
 
     Args:
         metric_name: Name of the metric being analyzed
@@ -80,16 +80,16 @@ def generate_executive_summary(
         Generated executive summary text
 
     Raises:
-        ValueError: If Anthropic API key is not found or API call fails
+        ValueError: If OpenAI API key is not found or API call fails
     """
-    api_key = os.getenv("ANTHROPIC_API_KEY")
+    api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
         raise ValueError(
-            "ANTHROPIC_API_KEY not found in environment variables. "
+            "OPENAI_API_KEY not found in environment variables. "
             "Please set it in your .env file."
         )
 
-    client = anthropic.Anthropic()
+    client = OpenAI()
 
     clean_metric_name = metric_name.split("_")[0]
 
@@ -166,14 +166,13 @@ D. Next Step Ideas
 
 """
 
-    response = client.messages.create(
-        model="claude-opus-4-6",
-        max_tokens=4096,
-        thinking={"type": "adaptive"},
-        output_config={"effort": "medium"},
-        messages=[{"role": "user", "content": prompt}],
+    response = client.responses.create(
+        model="gpt-5",
+        input=[{"role": "user", "content": prompt}],
+        # tools=[{"type": "web_search"}],
+        # tool_choice="auto",
+        reasoning={"effort": "medium"},
     )
-    # Extract text block from response (may also contain thinking blocks)
-    summary = next(block.text for block in response.content if block.type == "text")
+    summary = response.output_text
     improved_summary = evaluate_executive_summary(summary)
     return improved_summary
