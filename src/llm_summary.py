@@ -62,7 +62,7 @@ Executive summary draft:
 """
 
     response = client.chat.completions.create(
-        model="gpt-4o-mini",
+        model="gpt-5-mini",
         messages=[{"role": "user", "content": prompt}],
     )
     return response.choices[0].message.content
@@ -171,7 +171,7 @@ D. Next Step Ideas
 """
 
     response = client.chat.completions.create(
-        model="gpt-4o",
+        model="gpt-5",
         messages=[{"role": "user", "content": prompt}],
     )
     draft_summary = response.choices[0].message.content
