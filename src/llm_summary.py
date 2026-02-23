@@ -2,36 +2,47 @@
 
 import os
 import pandas as pd
-from openai import OpenAI, APIError
+from openai import OpenAI, APIError, RateLimitError
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
 load_dotenv()
 
+# Module-level client singleton — created once, reused across calls.
+_client: OpenAI | None = None
 
-def _get_client() -> tuple[OpenAI, str]:
-    """Return an OpenAI client and the validated API key.
+
+def _get_client() -> OpenAI:
+    """Return the shared OpenAI client, initialising it on first call.
 
     Raises:
         ValueError: If OPENAI_API_KEY is not set.
     """
+    global _client
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
         raise ValueError(
             "OPENAI_API_KEY not found in environment variables. "
             "Please set it in your .env file."
         )
-    return OpenAI(), api_key
+    if _client is None:
+        _client = OpenAI()
+    return _client
+
+
+# Maximum tokens for each LLM call.
+# The prompt requests ≤10 sentences; 500 tokens is ample and prevents runaway usage.
+_MAX_TOKENS = 500
 
 
 def evaluate_executive_summary(summary: str) -> str:
     """Polish the executive summary for clarity and conciseness.
 
     Raises:
-        ValueError: If OPENAI_API_KEY is not set.
-        APIError: If the OpenAI API call fails.
+        ValueError: If OPENAI_API_KEY is not set or quota/rate limit is reached.
+        APIError: If the OpenAI API call fails for another reason.
     """
-    client, _ = _get_client()
+    client = _get_client()
 
     prompt = f"""
 You are an expert data analyst and executive communication coach.
@@ -64,6 +75,7 @@ Executive summary draft:
     response = client.chat.completions.create(
         model="gpt-5-mini",
         messages=[{"role": "user", "content": prompt}],
+        max_tokens=_MAX_TOKENS,
     )
     return response.choices[0].message.content
 
@@ -90,10 +102,10 @@ def generate_executive_summary(
         Generated executive summary text
 
     Raises:
-        ValueError: If OpenAI API key is not found
-        APIError: If the OpenAI API call fails
+        ValueError: If OpenAI API key is not found or quota/rate limit is reached.
+        APIError: If the OpenAI API call fails for another reason.
     """
-    client, _ = _get_client()
+    client = _get_client()
 
     clean_metric_name = metric_name.split("_")[0]
 
@@ -170,10 +182,18 @@ D. Next Step Ideas
 
 """
 
-    response = client.chat.completions.create(
-        model="gpt-5",
-        messages=[{"role": "user", "content": prompt}],
-    )
+    try:
+        response = client.chat.completions.create(
+            model="gpt-5",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=_MAX_TOKENS,
+        )
+    except RateLimitError:
+        raise ValueError(
+            "OpenAI API quota or rate limit reached. "
+            "Please check your usage at platform.openai.com and try again later."
+        )
+
     draft_summary = response.choices[0].message.content
 
     # Polish the draft; fall back to the draft if the polish step fails.
