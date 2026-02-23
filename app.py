@@ -7,7 +7,7 @@ from pathlib import Path
 from src.formulas import evaluate_formula
 from src.decomposition import decompose
 from src.plotting import create_waterfall_chart
-from src.utils import validate_decomposition, format_value
+from src.utils import validate_decomposition, validate_inputs, format_value
 from src.llm_summary import generate_executive_summary
 
 # Load formulas from config
@@ -58,22 +58,19 @@ selected_label = st.selectbox(
 selected_obj = formula_map[selected_label]
 
 metric_name = selected_obj["output_metric"]
-metric_name_clean = metric_name  # In new config this is already clean e.g. "Sales"
-
+metric_name_clean = metric_name
 
 numerators = selected_obj.get("numerators", [])
 denominators = selected_obj.get("denominators", [])
 multiplier = selected_obj.get("multiplier", 1.0)
+is_currency_metric = selected_obj.get("currency_format", False)
 drivers = numerators + denominators
 
-# We keep a string representation for display/logic that might need it
-# formatting like "Sales = ..." -> strip "Sales = " if needed or just use label
-# But evaluate_formula now accepts explicit lists, so the string is less critical for calculation
-# define a formula string for display or legacy usage (RHS of equation)
+# RHS of the formula string for display and LLM prompt
 if " = " in selected_obj["formula_drop_down"]:
     formula_str = selected_obj["formula_drop_down"].split(" = ", 1)[1]
 else:
-    formula_str = selected_obj["formula_drop_down"] # fallback
+    formula_str = selected_obj["formula_drop_down"]
 
 st.subheader("Input Values")
 
@@ -84,28 +81,22 @@ t0 = {}
 t1 = {}
 
 cols = st.columns(2)
-# Set up default values for t0 and t1
-default_t0 = {"Spend": 50_000, "CPA": 50, "AOV": 100}
-default_t1 = {"Spend": 30_000, "CPA": 60, "AOV": 80}
+# Per-formula defaults from config; fall back to 1.0 if a driver isn't listed
+default_t0 = selected_obj.get("default_t0", {})
+default_t1 = selected_obj.get("default_t1", {})
 
 with cols[0]:
     st.markdown("##### Time 0 Values")
-    # Input only drivers (not the metric itself)
     for d in drivers:
-        init_val = default_t0.get(d, 1)
-        # Use custom label if available
+        init_val = default_t0.get(d, 1.0)
         label = selected_obj.get("driver_labels", {}).get(d, f"{d} (t0)")
         if not label.endswith("(t0)"):
             label = f"{label} (t0)"
-            
-        # Set format based on driver name
         fmt = "%.4f" if d in ["CTR", "CVR"] else "%.2f"
-            
         t0[d] = st.number_input(
             label, min_value=0.0, value=float(init_val), key=f"t0_{d}", format=fmt
         )
 
-    # Compute and display metric as read-only
     try:
         computed_t0_metric = evaluate_formula(
             metric_name, t0, numerators=numerators, denominators=denominators, multiplier=multiplier
@@ -116,26 +107,20 @@ with cols[0]:
         )
     except (ValueError, ZeroDivisionError) as e:
         st.error(f"Error computing {metric_name_clean}: {str(e)}")
-        t0[metric_name] = default_t0.get(metric_name, 0.0)
+        t0[metric_name] = 0.0
 
 with cols[1]:
     st.markdown("##### Time 1 Values")
-    # Input only drivers (not the metric itself)
     for d in drivers:
-        init_val = default_t1.get(d, 1)
-        # Use custom label if available
+        init_val = default_t1.get(d, 1.0)
         label = selected_obj.get("driver_labels", {}).get(d, f"{d} (t1)")
         if not label.endswith("(t1)"):
             label = f"{label} (t1)"
-
-        # Set format based on driver name
         fmt = "%.4f" if d in ["CTR", "CVR"] else "%.2f"
-
         t1[d] = st.number_input(
             label, min_value=0.0, value=float(init_val), key=f"t1_{d}", format=fmt
         )
 
-    # Compute and display metric as read-only
     try:
         computed_t1_metric = evaluate_formula(
             metric_name, t1, numerators=numerators, denominators=denominators, multiplier=multiplier
@@ -146,7 +131,7 @@ with cols[1]:
         )
     except (ValueError, ZeroDivisionError) as e:
         st.error(f"Error computing {metric_name_clean}: {str(e)}")
-        t1[metric_name] = default_t1.get(metric_name, 0.0)
+        t1[metric_name] = 0.0
 
 
 # -----------------------------
@@ -162,16 +147,22 @@ if "llm_summary" not in st.session_state:
 # Run decomposition
 # -----------------------------
 if st.button("Run Decomposition"):
-    drivers_df, outcome_info = decompose(
-        metric_name, t0, t1, numerators=numerators, denominators=denominators
-    )
+    # Validate inputs before running decomposition
+    try:
+        validate_inputs(t0, t1, drivers)
+    except ValueError as e:
+        st.error(f"❌ **Input Error:** {str(e)}")
+        st.stop()
 
-    # Get drivers in formula order
-    # Use the explicit order from config
+    try:
+        drivers_df, outcome_info = decompose(
+            metric_name, t0, t1, numerators=numerators, denominators=denominators
+        )
+    except ValueError as e:
+        st.error(f"❌ **Decomposition Error:** {str(e)}")
+        st.stop()
+
     formula_order = selected_obj.get("driver_order", drivers)
-
-    # Create clean metric name (remove suffix like _1, _2, etc.)
-    metric_name_clean = outcome_info["metric_name"].split("_")[0]
 
     # Calculate percentage change
     pct_change = (
@@ -181,9 +172,6 @@ if st.button("Run Decomposition"):
         if outcome_info["time0_value"] != 0
         else 0
     )
-
-    # Determine if metric is sales or CPA for formatting
-    is_currency_metric = outcome_info["metric_name"].startswith("Sales") or outcome_info["metric_name"].startswith("CPA")
 
     # Format output metric table
     output_df = pd.DataFrame()
@@ -246,6 +234,7 @@ if st.button("Run Decomposition"):
         "formula": formula_str,
         "numerators": numerators,
         "denominators": denominators,
+        "is_currency_metric": is_currency_metric,
     }
 
     # Clear LLM summary when new decomposition is run
@@ -298,6 +287,7 @@ if st.session_state.decomposition_results is not None:
         results["formula_order"],
         results["metric_name_clean"],
         selected_obj.get("higher_is_better", True),
+        results["is_currency_metric"],
     )
     st.pyplot(waterfall_fig)
     plt.close(waterfall_fig)

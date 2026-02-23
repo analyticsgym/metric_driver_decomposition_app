@@ -1,8 +1,6 @@
 """LLM-based executive summary generation for decomposition results."""
 
 import os
-import re
-from pathlib import Path
 import pandas as pd
 from openai import OpenAI, APIError
 from dotenv import load_dotenv
@@ -11,16 +9,29 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
-def evaluate_executive_summary(summary: str) -> str:
-    """Evaluate the executive summary and make improvements."""
+def _get_client() -> tuple[OpenAI, str]:
+    """Return an OpenAI client and the validated API key.
+
+    Raises:
+        ValueError: If OPENAI_API_KEY is not set.
+    """
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
         raise ValueError(
             "OPENAI_API_KEY not found in environment variables. "
             "Please set it in your .env file."
         )
+    return OpenAI(), api_key
 
-    client = OpenAI()
+
+def evaluate_executive_summary(summary: str) -> str:
+    """Polish the executive summary for clarity and conciseness.
+
+    Raises:
+        ValueError: If OPENAI_API_KEY is not set.
+        APIError: If the OpenAI API call fails.
+    """
+    client, _ = _get_client()
 
     prompt = f"""
 You are an expert data analyst and executive communication coach.
@@ -51,7 +62,7 @@ Executive summary draft:
 """
 
     response = client.chat.completions.create(
-        model="gpt-5-mini",
+        model="gpt-4o-mini",
         messages=[{"role": "user", "content": prompt}],
     )
     return response.choices[0].message.content
@@ -79,16 +90,10 @@ def generate_executive_summary(
         Generated executive summary text
 
     Raises:
-        ValueError: If OpenAI API key is not found or API call fails
+        ValueError: If OpenAI API key is not found
+        APIError: If the OpenAI API call fails
     """
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        raise ValueError(
-            "OPENAI_API_KEY not found in environment variables. "
-            "Please set it in your .env file."
-        )
-
-    client = OpenAI()
+    client, _ = _get_client()
 
     clean_metric_name = metric_name.split("_")[0]
 
@@ -132,10 +137,10 @@ A. Headline (2 bullets)
 - State the overall % and absolute change in {clean_metric_name}.
 - Define the so what for an executive audience describing the drivers contributions.
 
-B. Driver Attribution (3–6 sentences)
+B. Driver Attribution (3-6 sentences)
 For each driver in the table:
 
-1. State whether the driver was a Tailwind (+) or Headwind (–).
+1. State whether the driver was a Tailwind (+) or Headwind (-).
 2. State the driver's own change (e.g., "Traffic increased 12%").
 3. Explain its effect using formula logic:
 - If numerator: "Because it is a numerator, this movement raised/lowered {clean_metric_name} by [Contribution]."
@@ -166,9 +171,13 @@ D. Next Step Ideas
 """
 
     response = client.chat.completions.create(
-        model="gpt-5",
+        model="gpt-4o",
         messages=[{"role": "user", "content": prompt}],
     )
-    summary = response.choices[0].message.content
-    improved_summary = evaluate_executive_summary(summary)
-    return improved_summary
+    draft_summary = response.choices[0].message.content
+
+    # Polish the draft; fall back to the draft if the polish step fails.
+    try:
+        return evaluate_executive_summary(draft_summary)
+    except (APIError, Exception):
+        return draft_summary
