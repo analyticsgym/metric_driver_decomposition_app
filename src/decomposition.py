@@ -4,7 +4,6 @@ import numpy as np
 from typing import Tuple, Dict
 
 
-
 def multiplicative_contribution(
     metric_name: str,
     t0: Dict[str, float],
@@ -25,12 +24,23 @@ def multiplicative_contribution(
         Tuple of:
         - drivers_df: DataFrame with only driver rows (inputs)
         - outcome_info: Dict with metric change information for reconciliation
+
+    Raises:
+        ValueError: If any t0 driver value is zero (growth factor undefined),
+                    or if all drivers are unchanged (no variation to decompose).
     """
     drivers = numerators + denominators
 
-    # growth factors
-    g = {d: t1[d] / t0[d] for d in drivers}
+    # Guard: t0 values must be non-zero to compute growth factors
+    zero_drivers = [d for d in drivers if t0[d] == 0]
+    if zero_drivers:
+        raise ValueError(
+            f"Driver(s) {zero_drivers} have a t0 value of zero. "
+            "Log decomposition requires all baseline values to be non-zero."
+        )
 
+    # Growth factors and raw percent changes
+    g = {d: t1[d] / t0[d] for d in drivers}
     pct_change = {d: (t1[d] - t0[d]) / t0[d] for d in drivers}
 
     df = pd.DataFrame(
@@ -43,7 +53,7 @@ def multiplicative_contribution(
         }
     )
 
-    # +log for numerator, –log for denominator
+    # +log for numerator, -log for denominator
     df["log_driver"] = df.apply(
         lambda r: (
             np.log(r["growth_factor"])
@@ -53,11 +63,20 @@ def multiplicative_contribution(
         axis=1,
     )
 
-    # normalize log shares
     total_log = df["log_driver"].sum()
+
+    # Guard: if every driver is unchanged, there is nothing to decompose
+    if total_log == 0:
+        raise ValueError(
+            "All drivers show no change between t0 and t1 "
+            "(total log contribution is zero). "
+            "Please provide inputs with at least one driver change."
+        )
+
+    # Normalize log shares
     df["log_share"] = df["log_driver"] / total_log
 
-    # final metric changes
+    # Final metric changes
     metric_f = t1[metric_name] / t0[metric_name]
     metric_pct_change = (metric_f - 1) * 100
     metric_abs_change = t1[metric_name] - t0[metric_name]
@@ -65,15 +84,14 @@ def multiplicative_contribution(
     df["percentage_points_contribution"] = df["log_share"] * metric_pct_change
     df["absolute_contribution"] = df["log_share"] * metric_abs_change
 
-    # add column for direction label
+    # Direction label for charting
     df["direction_label"] = np.where(
         df["absolute_contribution"] >= 0, "positive", "negative"
     )
 
-    # rename driver column to metric name for display
+    # Rename driver column to metric for display
     df = df.rename(columns={"driver": "metric"})
 
-    # Prepare outcome info for reconciliation
     outcome_info = {
         "metric_name": metric_name,
         "time0_value": t0[metric_name],
@@ -85,8 +103,6 @@ def multiplicative_contribution(
     }
 
     return df, outcome_info
-
-
 
 
 def decompose(
@@ -109,4 +125,3 @@ def decompose(
         Tuple of (drivers_df, outcome_info)
     """
     return multiplicative_contribution(metric_name, t0, t1, numerators, denominators)
-

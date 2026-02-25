@@ -10,6 +10,7 @@ def create_waterfall_chart(
     formula_order: List[str],
     metric_name_clean: str,
     higher_is_better: bool = True,
+    is_currency_metric: bool = False,
 ):
     """Create a true waterfall chart showing cumulative path from t0 to t1.
 
@@ -129,8 +130,7 @@ def create_waterfall_chart(
         zorder=2,
     )
 
-    # Add value labels on bars - check if metric name requires currency formatting
-    is_currency_metric = outcome_info["metric_name"].startswith("Sales") or outcome_info["metric_name"].startswith("CPA")
+    # Add value labels on bars
     for i, (bar, label) in enumerate(zip(bars, labels)):
         bar_height = heights[i]
         bar_bottom = bottoms[i]
