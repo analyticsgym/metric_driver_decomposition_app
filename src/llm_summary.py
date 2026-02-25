@@ -1,48 +1,26 @@
 """LLM-based executive summary generation for decomposition results."""
 
 import os
+import re
+from pathlib import Path
 import pandas as pd
-from openai import OpenAI, APIError, RateLimitError
+from openai import OpenAI, APIError
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
 load_dotenv()
 
-# Module-level client singleton — created once, reused across calls.
-_client: OpenAI | None = None
 
-
-def _get_client() -> OpenAI:
-    """Return the shared OpenAI client, initialising it on first call.
-
-    Raises:
-        ValueError: If OPENAI_API_KEY is not set.
-    """
-    global _client
+def evaluate_executive_summary(summary: str) -> str:
+    """Evaluate the executive summary and make improvements."""
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
         raise ValueError(
             "OPENAI_API_KEY not found in environment variables. "
             "Please set it in your .env file."
         )
-    if _client is None:
-        _client = OpenAI()
-    return _client
 
-
-# Maximum tokens for each LLM call.
-# The prompt requests ≤10 sentences; 500 tokens is ample and prevents runaway usage.
-_MAX_TOKENS = 500
-
-
-def evaluate_executive_summary(summary: str) -> str:
-    """Polish the executive summary for clarity and conciseness.
-
-    Raises:
-        ValueError: If OPENAI_API_KEY is not set or quota/rate limit is reached.
-        APIError: If the OpenAI API call fails for another reason.
-    """
-    client = _get_client()
+    client = OpenAI()
 
     prompt = f"""
 You are an expert data analyst and executive communication coach.
@@ -72,12 +50,12 @@ Executive summary draft:
 {summary}
 """
 
-    response = client.chat.completions.create(
+    response = client.responses.create(
         model="gpt-5-mini",
-        messages=[{"role": "user", "content": prompt}],
-        max_tokens=_MAX_TOKENS,
+        input=[{"role": "user", "content": prompt}],
+        reasoning={"effort": "low"},
     )
-    return response.choices[0].message.content
+    return response.output_text
 
 
 def generate_executive_summary(
@@ -102,10 +80,16 @@ def generate_executive_summary(
         Generated executive summary text
 
     Raises:
-        ValueError: If OpenAI API key is not found or quota/rate limit is reached.
-        APIError: If the OpenAI API call fails for another reason.
+        ValueError: If OpenAI API key is not found or API call fails
     """
-    client = _get_client()
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        raise ValueError(
+            "OPENAI_API_KEY not found in environment variables. "
+            "Please set it in your .env file."
+        )
+
+    client = OpenAI()
 
     clean_metric_name = metric_name.split("_")[0]
 
@@ -123,10 +107,10 @@ Formula: {formula}
 
 Classify drivers based on their position in the formula:
 
-- Numerators (Direct Effect): Increasing these increases the metric.
+- Numerators (Direct Effect): Increasing these increases the metric.  
 Numerators: {', '.join(numerators) if numerators else 'None'}
 
-- Denominators (Inverse Effect): Increasing these decreases the metric.
+- Denominators (Inverse Effect): Increasing these decreases the metric.  
 Denominators: {', '.join(denominators) if denominators else 'None'}
 
 You must use this logic in every driver explanation.
@@ -149,18 +133,18 @@ A. Headline (2 bullets)
 - State the overall % and absolute change in {clean_metric_name}.
 - Define the so what for an executive audience describing the drivers contributions.
 
-B. Driver Attribution (3-6 sentences)
+B. Driver Attribution (3–6 sentences)
 For each driver in the table:
 
-1. State whether the driver was a Tailwind (+) or Headwind (-).
-2. State the driver's own change (e.g., "Traffic increased 12%").
+1. State whether the driver was a Tailwind (+) or Headwind (–).
+2. State the driver's own change (e.g., “Traffic increased 12%”).
 3. Explain its effect using formula logic:
-- If numerator: "Because it is a numerator, this movement raised/lowered {clean_metric_name} by [Contribution]."
-- If denominator: "Because it is a denominator, this movement put upward/downward pressure on {clean_metric_name} by [Contribution]."
+- If numerator: “Because it is a numerator, this movement raised/lowered {clean_metric_name} by [Contribution].”
+- If denominator: “Because it is a denominator, this movement put upward/downward pressure on {clean_metric_name} by [Contribution].”
 4. Use the actual contribution value from the table.
 
 Follow this sentence template where possible:
-"[Driver] [increased/decreased] by X%, acting as a [Tailwind/Headwind]. Because it is a [numerator/denominator], this movement [increased/decreased] {clean_metric_name} by [Contribution]."
+“[Driver] [increased/decreased] by X%, acting as a [Tailwind/Headwind]. Because it is a [numerator/denominator], this movement [increased/decreased] {clean_metric_name} by [Contribution].”
 
 C. Primary Driver (1 sentence)
 - Identify the driver with the largest absolute contribution.
@@ -173,31 +157,22 @@ D. Next Step Ideas
 
 4. Style Requirements
 - Format the output in plain text only.
-- Be concise and deterministic.
-- No speculation.
-- No metaphors.
-- Use only information provided.
+- Be concise and deterministic.  
+- No speculation.  
+- No metaphors.  
+- Use only information provided.  
 - Do not exceed 10 sentences total.
 - Do not use emojis, bold, or italic formatting.
 
 """
 
-    try:
-        response = client.chat.completions.create(
-            model="gpt-5",
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=_MAX_TOKENS,
-        )
-    except RateLimitError:
-        raise ValueError(
-            "OpenAI API quota or rate limit reached. "
-            "Please check your usage at platform.openai.com and try again later."
-        )
-
-    draft_summary = response.choices[0].message.content
-
-    # Polish the draft; fall back to the draft if the polish step fails.
-    try:
-        return evaluate_executive_summary(draft_summary)
-    except (APIError, Exception):
-        return draft_summary
+    response = client.responses.create(
+        model="gpt-5",
+        input=[{"role": "user", "content": prompt}],
+        # tools=[{"type": "web_search"}],
+        # tool_choice="auto",
+        reasoning={"effort": "medium"},
+    )
+    summary = response.output_text
+    improved_summary = evaluate_executive_summary(summary)
+    return improved_summary
