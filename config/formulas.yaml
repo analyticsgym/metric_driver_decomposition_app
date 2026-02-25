@@ -1,25 +1,16 @@
 - id: 1
   output_metric: "Sales"
   formula_drop_down: "Sales = Spend / CPA * AOV"
-  numerators:
+  numerators: 
     - "Spend"
     - "AOV"
-  denominators:
+  denominators: 
     - "CPA"
   driver_order:
     - "Spend"
     - "CPA"
     - "AOV"
   higher_is_better: true
-  currency_format: true
-  default_t0:
-    Spend: 50000
-    CPA: 50
-    AOV: 100
-  default_t1:
-    Spend: 30000
-    CPA: 60
-    AOV: 80
 
 - id: 2
   output_metric: "Sales"
@@ -38,23 +29,10 @@
     - "CPM"
     - "Spend"
   higher_is_better: true
-  currency_format: true
   multiplier: 1000.0
   driver_labels:
     CTR: "CTR (decimal, e.g. 0.01 = 1%)"
     CVR: "CVR (decimal, e.g. 0.05 = 5%)"
-  default_t0:
-    CTR: 0.02
-    CVR: 0.05
-    AOV: 80
-    CPM: 5.0
-    Spend: 50000
-  default_t1:
-    CTR: 0.018
-    CVR: 0.06
-    AOV: 85
-    CPM: 6.0
-    Spend: 45000
 
 - id: 3
   output_metric: "Sales"
@@ -67,13 +45,6 @@
     - "Spend"
     - "ROAS"
   higher_is_better: true
-  currency_format: true
-  default_t0:
-    Spend: 50000
-    ROAS: 3.0
-  default_t1:
-    Spend: 40000
-    ROAS: 2.5
 
 - id: 4
   output_metric: "ROAS"
@@ -86,13 +57,6 @@
     - "AOV"
     - "CPA"
   higher_is_better: true
-  currency_format: false
-  default_t0:
-    AOV: 100
-    CPA: 40
-  default_t1:
-    AOV: 90
-    CPA: 45
 
 - id: 5
   output_metric: "ROAS"
@@ -109,21 +73,10 @@
     - "AOV"
     - "CPM"
   higher_is_better: true
-  currency_format: false
   multiplier: 1000.0
   driver_labels:
     CTR: "CTR (decimal, e.g. 0.01 = 1%)"
     CVR: "CVR (decimal, e.g. 0.05 = 5%)"
-  default_t0:
-    CTR: 0.02
-    CVR: 0.05
-    AOV: 80
-    CPM: 5.0
-  default_t1:
-    CTR: 0.018
-    CVR: 0.06
-    AOV: 85
-    CPM: 6.0
 
 - id: 6
   output_metric: "CPA"
@@ -138,16 +91,7 @@
     - "CTR"
     - "CVR"
   higher_is_better: false
-  currency_format: true
   multiplier: 0.001
   driver_labels:
     CTR: "CTR (decimal, e.g. 0.01 = 1%)"
     CVR: "CVR (decimal, e.g. 0.05 = 5%)"
-  default_t0:
-    CPM: 5.0
-    CTR: 0.02
-    CVR: 0.05
-  default_t1:
-    CPM: 6.0
-    CTR: 0.018
-    CVR: 0.045
