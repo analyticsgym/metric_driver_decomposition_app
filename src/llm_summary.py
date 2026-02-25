@@ -30,9 +30,10 @@ def _get_client() -> OpenAI:
     return _client
 
 
-# Maximum tokens for each LLM call.
-# The prompt requests ≤10 sentences; 500 tokens is ample and prevents runaway usage.
-_MAX_TOKENS = 500
+# Token limits per call. The draft prompt requests ≤10 sentences; the polish
+# step rewrites the same content, so both need a similar budget.
+_MAX_TOKENS_DRAFT = 800
+_MAX_TOKENS_POLISH = 800
 
 
 def evaluate_executive_summary(summary: str) -> str:
@@ -75,7 +76,7 @@ Executive summary draft:
     response = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[{"role": "user", "content": prompt}],
-        max_tokens=_MAX_TOKENS,
+        max_tokens=_MAX_TOKENS_POLISH,
     )
     return response.choices[0].message.content
 
@@ -186,7 +187,7 @@ D. Next Step Ideas
         response = client.chat.completions.create(
             model="gpt-4o",
             messages=[{"role": "user", "content": prompt}],
-            max_tokens=_MAX_TOKENS,
+            max_tokens=_MAX_TOKENS_DRAFT,
         )
     except RateLimitError:
         raise ValueError(
@@ -199,5 +200,5 @@ D. Next Step Ideas
     # Polish the draft; fall back to the draft if the polish step fails.
     try:
         return evaluate_executive_summary(draft_summary)
-    except (APIError, Exception):
+    except Exception:
         return draft_summary
