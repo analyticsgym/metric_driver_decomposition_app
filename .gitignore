@@ -34,8 +34,6 @@ wheels/
 .ipynb_checkpoints
 *.ipynb
 
-# Streamlit
-.streamlit/
 
 # OS
 .DS_Store

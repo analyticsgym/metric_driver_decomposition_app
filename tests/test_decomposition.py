@@ -6,11 +6,12 @@ from src.decomposition import decompose, multiplicative_contribution
 
 def test_decompose_basic():
     """Test basic decomposition."""
-    formulas = {"Sales": "Spend / CPA * AOV"}
     t0 = {"Sales": 100000, "Spend": 50000, "CPA": 50, "AOV": 100}
     t1 = {"Sales": 40000, "Spend": 30000, "CPA": 60, "AOV": 80}
 
-    drivers_df, outcome_info = decompose("Sales", t0, t1, formulas)
+    drivers_df, outcome_info = decompose(
+        "Sales", t0, t1, numerators=["Spend", "AOV"], denominators=["CPA"]
+    )
 
     # Check that drivers_df has the right columns
     assert "metric" in drivers_df.columns
@@ -29,11 +30,12 @@ def test_decompose_basic():
 
 def test_decompose_contributions_sum():
     """Test that driver contributions sum to total change."""
-    formulas = {"Sales": "Spend / CPA * AOV"}
     t0 = {"Sales": 100000, "Spend": 50000, "CPA": 50, "AOV": 100}
     t1 = {"Sales": 40000, "Spend": 30000, "CPA": 60, "AOV": 80}
 
-    drivers_df, outcome_info = decompose("Sales", t0, t1, formulas)
+    drivers_df, outcome_info = decompose(
+        "Sales", t0, t1, numerators=["Spend", "AOV"], denominators=["CPA"]
+    )
 
     # Sum of absolute contributions should equal absolute change (within rounding)
     sum_abs = drivers_df["absolute_contribution"].sum()
@@ -62,4 +64,3 @@ def test_multiplicative_contribution_direct():
     assert len(drivers_df) == 3
     assert "absolute_contribution" in drivers_df.columns
     assert outcome_info["metric_name"] == "Sales"
-
